@@ -7,9 +7,11 @@ import Attendance from './pages/Attendance';
 import Salary from './pages/Salary';
 import Settings from './pages/Settings';
 
+const basename = import.meta.env.BASE_URL.replace(/\/$/, '')
+
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={basename}>
       <Routes>
         <Route element={<AppShell />}>
           <Route index element={<Dashboard />} />
