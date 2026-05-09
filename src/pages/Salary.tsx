@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
-import { Wallet, Download, FileText, Plus, Trash2, ChevronLeft, ChevronRight, CheckCircle2 } from 'lucide-react';
+import { Wallet, Download, FileText, Plus, Trash2, ChevronLeft, ChevronRight, CheckCircle2, MessageCircle, BookOpenText } from 'lucide-react';
 import { useStore, snapshot } from '../lib/store';
 import { Modal } from '../components/Modal';
 import { Avatar } from '../components/Avatar';
 import { EmptyState } from '../components/EmptyState';
 import { money, monthLabel, thisMonth, todayISO, fmtDate } from '../lib/format';
 import { computeSalary } from '../lib/salary';
-import { exportMonthSalaryXLSX, exportMonthSalaryPDF, downloadSlipPDF } from '../lib/io';
+import { exportMonthSalaryXLSX, exportMonthSalaryPDF, downloadSlipPDF, exportMonthlyRegisterPDF, whatsappUrl, buildSalaryShareText } from '../lib/io';
 import type { Guard, SalaryComputation } from '../types';
 import { format, addMonths, parseISO } from 'date-fns';
 import clsx from 'clsx';
@@ -51,11 +51,34 @@ export default function Salary() {
   const guardAdjustments = openGuard ? adjustments.filter(a => a.guardId === openGuard.id && a.month === ym) : [];
   const guardPayments = openGuard ? payments.filter(p => p.guardId === openGuard.id && p.month === ym) : [];
 
+  const attendance = useStore(s => s.attendance);
+  const holidays = useStore(s => s.holidays);
+
   function downloadXLSX() {
     exportMonthSalaryXLSX(rows, ym, `Salary_${ym}.xlsx`, symbol);
   }
   function downloadPDF() {
     exportMonthSalaryPDF(rows, ym, `Salary_${ym}.pdf`, symbol, settings.businessName, settings.ownerName);
+  }
+  function downloadRegister() {
+    exportMonthlyRegisterPDF(
+      activeGuards,
+      g => areas.find(a => a.id === g.areaId)?.name ?? '—',
+      attendance,
+      holidays,
+      ym,
+      settings.businessName,
+      settings.ownerName,
+    );
+  }
+  function shareSlipWA() {
+    if (!openGuard || !guardCalc) return;
+    if (!openGuard.phone) {
+      alert('Add a phone number for this guard to share via WhatsApp.');
+      return;
+    }
+    const text = buildSalaryShareText(openGuard, areas.find(a => a.id === openGuard.areaId)?.name ?? '—', ym, guardCalc, settings.businessName, symbol);
+    window.open(whatsappUrl(openGuard.phone, text), '_blank');
   }
   function addAdj() {
     if (!openGuard || !adjDraft.amount) return;
@@ -88,9 +111,10 @@ export default function Salary() {
           <h1 className="text-2xl font-semibold text-ink-900">Salary</h1>
           <p className="text-ink-500 text-sm mt-1">Auto-calculated from attendance, with uniform deductions and adjustments.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <button className="btn-secondary" onClick={downloadRegister}><BookOpenText size={16} /> Register</button>
           <button className="btn-secondary" onClick={downloadXLSX}><Download size={16} /> Excel</button>
-          <button className="btn-primary" onClick={downloadPDF}><FileText size={16} /> PDF</button>
+          <button className="btn-primary" onClick={downloadPDF}><FileText size={16} /> Salary PDF</button>
         </div>
       </div>
 
@@ -193,8 +217,9 @@ export default function Salary() {
           openGuard && guardCalc && (
             <>
               <button className="btn-secondary" onClick={() => downloadSlipPDF(openGuard, areas.find(a => a.id === openGuard.areaId)?.name ?? '—', ym, guardCalc, symbol, settings.businessName, settings.ownerName)}>
-                <FileText size={16} /> Download slip
+                <FileText size={16} /> Slip PDF
               </button>
+              <button className="btn-secondary" onClick={shareSlipWA}><MessageCircle size={16} /> WhatsApp</button>
               {guardCalc.balance > 0 && (
                 <button className="btn-primary" onClick={quickPaySettle}><CheckCircle2 size={16} /> Settle {money(guardCalc.balance, symbol)}</button>
               )}
@@ -205,10 +230,10 @@ export default function Salary() {
         {openGuard && guardCalc && (
           <div className="space-y-5">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <Stat label="Worked" value={`${guardCalc.workedUnits}`} hint={`P${guardCalc.presentDays} H${guardCalc.halfDays}`} />
+              <Stat label="Worked" value={`${guardCalc.workedUnits}`} hint={`P${guardCalc.presentDays} H${guardCalc.halfDays}${guardCalc.holidayPaidDays ? ' +' + guardCalc.holidayPaidDays + 'h' : ''}`} />
               <Stat label="Gross" value={money(guardCalc.gross, symbol)} hint={`@ ${money(guardCalc.dailyRate, symbol)}/d`} />
               <Stat label="Net" value={money(guardCalc.net, symbol)} hint={`After ${money(guardCalc.uniformDeduction + guardCalc.advances + guardCalc.otherDeductions - guardCalc.bonuses, symbol)} adj`} />
-              <Stat label="Balance" value={money(guardCalc.balance, symbol)} hint={`Paid ${money(guardCalc.paid, symbol)}`} />
+              <Stat label="Balance" value={money(guardCalc.balance, symbol)} hint={guardCalc.outstandingAdvance > 0 ? `+ ${money(guardCalc.outstandingAdvance, symbol)} from prior months` : `Paid ${money(guardCalc.paid, symbol)}`} />
             </div>
 
             <section>

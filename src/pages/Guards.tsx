@@ -1,13 +1,19 @@
-import { useMemo, useState } from 'react';
-import { Users, Plus, Pencil, Trash2, Phone, Search, Power, Shirt } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { Users, Plus, Pencil, Trash2, Phone, Search, Power, Shirt, Upload, FileText } from 'lucide-react';
 import { useStore } from '../lib/store';
 import { Modal } from '../components/Modal';
 import { EmptyState } from '../components/EmptyState';
 import { Avatar } from '../components/Avatar';
+import { GuardProfile } from '../components/GuardProfile';
 import { money, fmtDate, todayISO } from '../lib/format';
-import type { Guard } from '../types';
+import { parseGuardsCSV } from '../lib/io';
+import type { Guard, WeekDay } from '../types';
 
 interface Draft extends Partial<Guard> {}
+const DAYS: { v: WeekDay; label: string }[] = [
+  { v: 0, label: 'Sun' }, { v: 1, label: 'Mon' }, { v: 2, label: 'Tue' },
+  { v: 3, label: 'Wed' }, { v: 4, label: 'Thu' }, { v: 5, label: 'Fri' }, { v: 6, label: 'Sat' },
+];
 
 export default function Guards() {
   const guards = useStore(s => s.guards);
@@ -15,6 +21,7 @@ export default function Guards() {
   const addGuard = useStore(s => s.addGuard);
   const updateGuard = useStore(s => s.updateGuard);
   const removeGuard = useStore(s => s.removeGuard);
+  const addGuardsBulk = useStore(s => s.addGuardsBulk);
   const uniforms = useStore(s => s.uniforms);
   const addUniform = useStore(s => s.addUniform);
   const removeUniform = useStore(s => s.removeUniform);
@@ -24,8 +31,13 @@ export default function Guards() {
   const [filterActive, setFilterActive] = useState<'all' | 'active' | 'inactive'>('active');
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState<Draft | null>(null);
+  const [profileOf, setProfileOf] = useState<Guard | null>(null);
   const [uniformFor, setUniformFor] = useState<Guard | null>(null);
   const [uniformDraft, setUniformDraft] = useState<{ date: string; item: string; cost: string }>({ date: todayISO(), item: '', cost: '' });
+  const [csvOpen, setCsvOpen] = useState(false);
+  const [csvText, setCsvText] = useState('');
+  const [csvErrors, setCsvErrors] = useState<string[]>([]);
+  const csvFile = useRef<HTMLInputElement>(null);
 
   const filtered = useMemo(() => {
     return guards.filter(g => {
@@ -49,6 +61,7 @@ export default function Guards() {
       joinDate: editing.joinDate || todayISO(),
       active: editing.active ?? true,
       notes: editing.notes?.trim() || '',
+      weeklyOff: editing.weeklyOff || [],
     };
     if (editing.id) updateGuard(editing.id, payload);
     else addGuard(payload);
@@ -72,15 +85,43 @@ export default function Guards() {
     setUniformDraft({ date: todayISO(), item: '', cost: '' });
   }
 
+  function toggleWeeklyOff(d: WeekDay) {
+    setEditing(s => {
+      const arr = (s?.weeklyOff || []) as WeekDay[];
+      const has = arr.includes(d);
+      return { ...s, weeklyOff: has ? arr.filter(x => x !== d) : [...arr, d] };
+    });
+  }
+
+  async function onCsvFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]; if (!f) return;
+    const text = await f.text();
+    setCsvText(text);
+    e.target.value = '';
+  }
+
+  function importCsv() {
+    const result = parseGuardsCSV(csvText, areas, todayISO());
+    if (result.errors.length && result.guards.length === 0) {
+      setCsvErrors(result.errors);
+      return;
+    }
+    if (result.guards.length === 0) {
+      setCsvErrors(['No valid rows found.']);
+      return;
+    }
+    if (!confirm(`Import ${result.guards.length} guard(s)? ${result.errors.length} row(s) will be skipped.`)) return;
+    addGuardsBulk(result.guards);
+    setCsvErrors(result.errors);
+    setCsvOpen(false);
+    setCsvText('');
+  }
+
   if (areas.length === 0 && guards.length === 0) {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-semibold text-ink-900">Guards</h1>
-        <EmptyState
-          icon={<Users size={20} />}
-          title="Create an area first"
-          body="Each guard belongs to an area (a site you manage). Add at least one area before adding guards."
-        />
+        <EmptyState icon={<Users size={20} />} title="Create an area first" body="Each guard belongs to an area (a site you manage). Add at least one area before adding guards." />
       </div>
     );
   }
@@ -92,9 +133,12 @@ export default function Guards() {
           <h1 className="text-2xl font-semibold text-ink-900">Guards</h1>
           <p className="text-ink-500 text-sm mt-1">{guards.filter(g => g.active).length} active • {guards.filter(g => !g.active).length} inactive</p>
         </div>
-        <button className="btn-primary" onClick={() => setEditing({ active: true, joinDate: todayISO(), dailyRate: 600, areaId: areas[0]?.id })} disabled={areas.length === 0}>
-          <Plus size={16} /> Add guard
-        </button>
+        <div className="flex gap-2">
+          <button className="btn-secondary" onClick={() => { setCsvOpen(true); setCsvErrors([]); }}><Upload size={16} /> Import CSV</button>
+          <button className="btn-primary" onClick={() => setEditing({ active: true, joinDate: todayISO(), dailyRate: 600, areaId: areas[0]?.id, weeklyOff: [] })} disabled={areas.length === 0}>
+            <Plus size={16} /> Add guard
+          </button>
+        </div>
       </div>
 
       <div className="card p-3 md:p-4 flex flex-wrap items-center gap-2">
@@ -118,7 +162,7 @@ export default function Guards() {
           icon={<Users size={20} />}
           title="No guards match"
           body={guards.length === 0 ? 'Add your first guard to start.' : 'Try clearing filters.'}
-          action={guards.length === 0 ? <button className="btn-primary" onClick={() => setEditing({ active: true, joinDate: todayISO(), dailyRate: 600, areaId: areas[0]?.id })}><Plus size={16} /> Add guard</button> : null}
+          action={guards.length === 0 ? <button className="btn-primary" onClick={() => setEditing({ active: true, joinDate: todayISO(), dailyRate: 600, areaId: areas[0]?.id, weeklyOff: [] })}><Plus size={16} /> Add guard</button> : null}
         />
       ) : (
         <div className="card overflow-hidden">
@@ -126,12 +170,18 @@ export default function Guards() {
             {filtered.map(g => {
               const area = areas.find(a => a.id === g.areaId)?.name ?? '—';
               return (
-                <li key={g.id} className="flex items-center gap-3 px-4 py-3">
+                <li key={g.id} className="flex items-center gap-3 px-4 py-3 hover:bg-ink-50/40 cursor-pointer" onClick={(e) => {
+                  if ((e.target as HTMLElement).closest('button')) return;
+                  setProfileOf(g);
+                }}>
                   <Avatar name={g.name} size={40} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <div className="font-medium text-ink-900 truncate">{g.name}</div>
                       {!g.active && <span className="chip bg-ink-100 text-ink-500">Inactive</span>}
+                      {(g.weeklyOff && g.weeklyOff.length > 0) && (
+                        <span className="chip bg-ink-100 text-ink-600">Off: {g.weeklyOff.map(d => DAYS[d].label).join(',')}</span>
+                      )}
                     </div>
                     <div className="text-xs text-ink-500 flex flex-wrap items-center gap-x-3 gap-y-1 mt-0.5">
                       <span>{area}</span>
@@ -175,7 +225,7 @@ export default function Guards() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Phone</label>
-              <input className="input" value={editing?.phone ?? ''} onChange={e => setEditing(s => ({ ...s, phone: e.target.value }))} />
+              <input className="input" placeholder="+91 …" value={editing?.phone ?? ''} onChange={e => setEditing(s => ({ ...s, phone: e.target.value }))} />
             </div>
             <div>
               <label className="label">Daily rate ({useStore.getState().settings.currencySymbol})</label>
@@ -194,6 +244,21 @@ export default function Guards() {
               <label className="label">Join date</label>
               <input type="date" className="input" value={editing?.joinDate ?? todayISO()} onChange={e => setEditing(s => ({ ...s, joinDate: e.target.value }))} />
             </div>
+          </div>
+          <div>
+            <label className="label">Weekly off</label>
+            <div className="flex flex-wrap gap-1.5">
+              {DAYS.map(d => {
+                const on = (editing?.weeklyOff || []).includes(d.v);
+                return (
+                  <button key={d.v} type="button" onClick={() => toggleWeeklyOff(d.v)}
+                    className={`chip ring-1 ring-inset transition ${on ? 'bg-ink-900 text-white ring-ink-900' : 'bg-white text-ink-600 ring-ink-200 hover:bg-ink-50'}`}>
+                    {d.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="text-[11px] text-ink-400 mt-1.5">Days the guard doesn't work. Attendance for these days won't count against them.</div>
           </div>
           <div>
             <label className="label">Notes</label>
@@ -233,7 +298,6 @@ export default function Guards() {
                 <button className="btn-primary w-full" onClick={addUniformIssue} disabled={!uniformDraft.item.trim()}><Plus size={16} /> Issue</button>
               </div>
             </div>
-
             <div>
               <div className="text-xs font-medium text-ink-500 uppercase tracking-wide mb-2">History</div>
               {guardUniforms(uniformFor.id).length === 0 ? (
@@ -257,6 +321,49 @@ export default function Guards() {
           </div>
         )}
       </Modal>
+
+      <Modal
+        open={csvOpen}
+        onClose={() => setCsvOpen(false)}
+        title="Bulk import guards (CSV)"
+        description="Paste rows or upload a .csv file. Required columns: name, area, dailyRate. Optional: phone, joinDate, weeklyOff."
+        size="lg"
+        footer={
+          <>
+            <button className="btn-secondary" onClick={() => setCsvOpen(false)}>Cancel</button>
+            <button className="btn-primary" onClick={importCsv} disabled={!csvText.trim()}>Import</button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <input type="file" ref={csvFile} accept=".csv,text/csv" hidden onChange={onCsvFile} />
+            <button className="btn-secondary" onClick={() => csvFile.current?.click()}><FileText size={16} /> Choose .csv file</button>
+            <button className="btn-ghost text-xs" onClick={() => setCsvText('name,phone,area,dailyRate,joinDate,weeklyOff\nRamesh Kumar,+91 98450 12345,Lakeview Apartments,650,2026-01-09,Sun')}>Insert example</button>
+          </div>
+          <textarea
+            className="input font-mono text-xs"
+            rows={10}
+            placeholder="name,phone,area,dailyRate,joinDate,weeklyOff"
+            value={csvText}
+            onChange={e => setCsvText(e.target.value)}
+          />
+          {csvErrors.length > 0 && (
+            <div className="rounded-lg bg-amber-50 ring-1 ring-amber-200 p-3 text-xs text-amber-800 max-h-32 overflow-auto">
+              <div className="font-semibold mb-1">Issues</div>
+              <ul className="list-disc ml-4 space-y-0.5">
+                {csvErrors.slice(0, 12).map((e, i) => <li key={i}>{e}</li>)}
+                {csvErrors.length > 12 && <li>… {csvErrors.length - 12} more</li>}
+              </ul>
+            </div>
+          )}
+          <div className="text-[11px] text-ink-400">
+            Areas must already exist. Match is case-insensitive on area name. Weekly-off accepts day names (Sun, Mon, …) or numbers (0–6, where 0 = Sunday); separate multiples with <code>|</code>.
+          </div>
+        </div>
+      </Modal>
+
+      <GuardProfile guard={profileOf} onClose={() => setProfileOf(null)} onEdit={(g) => { setProfileOf(null); setEditing(g); }} />
     </div>
   );
 }

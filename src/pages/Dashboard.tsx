@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Users, MapPin, CalendarCheck, Wallet, ArrowRight, Sparkles } from 'lucide-react';
+import { Users, MapPin, CalendarCheck, Wallet, ArrowRight, Sparkles, AlertCircle, Download } from 'lucide-react';
 import { useStore, snapshot } from '../lib/store';
 import { StatCard } from '../components/StatCard';
 import { EmptyState } from '../components/EmptyState';
@@ -7,12 +7,16 @@ import { money, todayISO, thisMonth, monthLabel } from '../lib/format';
 import { computeSalary } from '../lib/salary';
 import { Avatar } from '../components/Avatar';
 import { seedDemoData } from '../lib/seed';
+import { exportBackupXLSX } from '../lib/io';
+import { differenceInDays, parseISO, format } from 'date-fns';
 
 export default function Dashboard() {
   const guards = useStore(s => s.guards);
   const areas = useStore(s => s.areas);
   const attendance = useStore(s => s.attendance);
-  const symbol = useStore(s => s.settings.currencySymbol);
+  const settings = useStore(s => s.settings);
+  const updateSettings = useStore(s => s.updateSettings);
+  const symbol = settings.currencySymbol;
   const today = todayISO();
   const ym = thisMonth();
 
@@ -58,6 +62,15 @@ export default function Dashboard() {
     .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
     .slice(0, 5);
 
+  const todayUnmarked = activeGuards.length > 0 && markedToday < activeGuards.length;
+  const daysSinceBackup = settings.lastBackupAt ? differenceInDays(new Date(), parseISO(settings.lastBackupAt)) : null;
+  const showBackupNudge = activeGuards.length > 0 && (daysSinceBackup === null || daysSinceBackup >= 7);
+
+  function quickBackup() {
+    exportBackupXLSX(snapshot(), `GuardKeeper_Backup_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
+    updateSettings({ lastBackupAt: new Date().toISOString() });
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-end justify-between gap-4 flex-wrap">
@@ -67,6 +80,28 @@ export default function Dashboard() {
         </div>
         <Link to="/attendance" className="btn-primary">Take attendance <ArrowRight size={16} /></Link>
       </div>
+
+      {todayUnmarked && (
+        <Link to="/attendance" className="flex items-center gap-3 rounded-xl bg-amber-50 ring-1 ring-amber-200 p-3.5 text-sm text-amber-900 hover:bg-amber-100 transition">
+          <AlertCircle size={18} className="text-amber-700 shrink-0" />
+          <div className="flex-1">
+            <span className="font-semibold">Today's attendance is incomplete</span>
+            <span className="text-amber-800/80"> — {activeGuards.length - markedToday} guard{activeGuards.length - markedToday === 1 ? '' : 's'} left to mark.</span>
+          </div>
+          <span className="hidden sm:inline text-xs font-medium">Open attendance →</span>
+        </Link>
+      )}
+
+      {showBackupNudge && (
+        <div className="flex items-center gap-3 rounded-xl bg-accent-50 ring-1 ring-accent-200 p-3.5 text-sm text-accent-900">
+          <Download size={18} className="text-accent-700 shrink-0" />
+          <div className="flex-1">
+            <span className="font-semibold">{daysSinceBackup === null ? 'Save your first backup' : `Last backup was ${daysSinceBackup} days ago`}</span>
+            <span className="text-accent-800/80"> — keep a copy in your email or Drive in case this device is lost.</span>
+          </div>
+          <button className="btn-primary" onClick={quickBackup}>Backup now</button>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <StatCard label="Active guards" value={activeGuards.length} hint={`${guards.length - activeGuards.length} inactive`} icon={<Users size={16} />} accent="blue" />

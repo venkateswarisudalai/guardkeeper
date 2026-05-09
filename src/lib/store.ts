@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type {
   AppData, Area, Guard, AttendanceRecord, AttendanceStatus,
-  UniformIssue, SalaryAdjustment, SalaryPayment, Settings,
+  UniformIssue, SalaryAdjustment, SalaryPayment, Settings, Holiday,
 } from '../types';
 import { uid } from './id';
 
@@ -13,6 +13,7 @@ const defaultSettings: Settings = {
   businessName: 'GuardKeeper',
   currency: 'INR',
   currencySymbol: '₹',
+  payOnHolidays: true,
 };
 
 interface StoreState extends AppData {
@@ -36,6 +37,11 @@ interface StoreState extends AppData {
   // Payments
   addPayment: (p: Omit<SalaryPayment, 'id'>) => SalaryPayment;
   removePayment: (id: string) => void;
+  // Holidays
+  addHoliday: (h: Omit<Holiday, 'id'>) => Holiday;
+  removeHoliday: (id: string) => void;
+  // Bulk add
+  addGuardsBulk: (gs: Array<Omit<Guard, 'id' | 'createdAt'>>) => Guard[];
   // Settings
   updateSettings: (patch: Partial<Settings>) => void;
   // Bulk
@@ -52,6 +58,7 @@ const initial: AppData = {
   uniforms: [],
   adjustments: [],
   payments: [],
+  holidays: [],
 };
 
 export const useStore = create<StoreState>()(
@@ -127,6 +134,20 @@ export const useStore = create<StoreState>()(
       },
       removePayment: (id) => set(s => ({ payments: s.payments.filter(p => p.id !== id) })),
 
+      addHoliday: (h) => {
+        const rec: Holiday = { ...h, id: uid('hol') };
+        set(s => ({ holidays: [...s.holidays, rec] }));
+        return rec;
+      },
+      removeHoliday: (id) => set(s => ({ holidays: s.holidays.filter(h => h.id !== id) })),
+
+      addGuardsBulk: (gs) => {
+        const now = new Date().toISOString();
+        const recs: Guard[] = gs.map(g => ({ ...g, id: uid('grd'), createdAt: now }));
+        set(s => ({ guards: [...s.guards, ...recs] }));
+        return recs;
+      },
+
       updateSettings: (patch) => set(s => ({ settings: { ...s.settings, ...patch } })),
 
       replaceAll: (data) => set({
@@ -138,6 +159,7 @@ export const useStore = create<StoreState>()(
         uniforms: data.uniforms || [],
         adjustments: data.adjustments || [],
         payments: data.payments || [],
+        holidays: data.holidays || [],
       }),
       resetAll: () => set({ ...initial }),
     }),
@@ -160,5 +182,6 @@ export function snapshot(): AppData {
     uniforms: s.uniforms,
     adjustments: s.adjustments,
     payments: s.payments,
+    holidays: s.holidays,
   };
 }

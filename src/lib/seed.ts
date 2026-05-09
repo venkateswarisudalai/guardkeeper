@@ -6,12 +6,13 @@ export function seedDemoData() {
   const s = useStore.getState();
   s.resetAll();
 
+  const today = new Date();
+  const join = format(subDays(today, 120), 'yyyy-MM-dd');
+
+  s.addHoliday({ date: `${format(today, 'yyyy-MM')}-15`, name: 'Mid-month holiday (sample)', paid: true });
   const a1 = s.addArea({ name: 'Lakeview Apartments', address: 'JP Nagar, Block 4' });
   const a2 = s.addArea({ name: 'Maple Heights', address: 'HSR Layout, Sector 2' });
   const a3 = s.addArea({ name: 'Pearl Tower Office', address: 'Whitefield Main Rd' });
-
-  const today = new Date();
-  const join = format(subDays(today, 120), 'yyyy-MM-dd');
 
   const guards = [
     { name: 'Ramesh Kumar', phone: '+91 98450 12345', areaId: a1.id, dailyRate: 650 },

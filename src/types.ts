@@ -7,6 +7,8 @@ export interface Area {
   createdAt: string;
 }
 
+export type WeekDay = 0 | 1 | 2 | 3 | 4 | 5 | 6; // 0=Sun
+
 export interface Guard {
   id: string;
   name: string;
@@ -16,7 +18,15 @@ export interface Guard {
   joinDate: string;
   active: boolean;
   notes?: string;
+  weeklyOff?: WeekDay[];
   createdAt: string;
+}
+
+export interface Holiday {
+  id: string;
+  date: string;
+  name: string;
+  paid: boolean;
 }
 
 export interface AttendanceRecord {
@@ -61,6 +71,8 @@ export interface Settings {
   businessName: string;
   currency: string;
   currencySymbol: string;
+  payOnHolidays: boolean;
+  lastBackupAt?: string;
 }
 
 export interface AppData {
@@ -72,6 +84,7 @@ export interface AppData {
   uniforms: UniformIssue[];
   adjustments: SalaryAdjustment[];
   payments: SalaryPayment[];
+  holidays: Holiday[];
 }
 
 export interface SalaryComputation {
@@ -80,6 +93,7 @@ export interface SalaryComputation {
   halfDays: number;
   absentDays: number;
   leaveDays: number;
+  holidayPaidDays: number;
   workedUnits: number;
   dailyRate: number;
   gross: number;
@@ -90,4 +104,5 @@ export interface SalaryComputation {
   net: number;
   paid: number;
   balance: number;
+  outstandingAdvance: number; // running balance carried from prior months
 }
